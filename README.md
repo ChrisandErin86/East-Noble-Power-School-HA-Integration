@@ -1,4 +1,4 @@
-# PowerSchool Grades & Attendance (Unofficial) for Home Assistant
+# PowerSchool Grades & Attendance for Home Assistant
 
 A custom Home Assistant integration that pulls per-course grades, attendance,
 and GPA out of a district's PowerSchool **guardian portal** and exposes them
@@ -7,8 +7,10 @@ works by logging in and parsing the same HTML pages your browser loads --
 it is a scraper, not a client for an official PowerSchool API.
 
 Built and verified against a live district instance (East Noble, IN) on
-2026-09-06. Other districts run the same PowerSchool SIS software but can be
-on different versions or have different template customizations -- see
+2026-09-06/09-07, against two students on two different grading schemes (a
+high schooler on semesters, an elementary student on marking periods).
+Other districts run the same PowerSchool SIS software but can be on
+different versions or have different template customizations -- see
 "When it breaks" below.
 
 ## What it gives you
@@ -16,9 +18,20 @@ on different versions or have different template customizations -- see
 - One Home Assistant "device" per linked student (multi-student guardian
   accounts are handled automatically via the portal's student switcher).
 - A GPA sensor per student, when the portal publishes one.
-- A sensor per course row on the grades/attendance table, with state =
-  current term grade and attributes for teacher name, term 1/term 2 grade,
-  absences, and tardies.
+- A sensor per course row on the grades/attendance table. State is the most
+  recently populated grading period's grade -- works whether the district
+  grades on 2 semesters or 4 marking periods, since the number of periods
+  isn't hardcoded. Attributes include teacher name, every grading period's
+  grade (not just the current one), absences, and tardies.
+- An Attendance sensor per student: state is total absences across every
+  current class, with total tardies and a per-course breakdown as
+  attributes. (This rolls up the same per-course totals already on the
+  grades table -- it does not scrape the separate day-by-day Attendance
+  History page, which is a much bigger year-long per-period grid of
+  attendance codes. Good v2 if you want that level of detail.)
+- A Missing Assignments sensor per student: state is the count of currently
+  missing assignments, with the full list (course, due date, assignment
+  name, category, teacher) as an attribute.
 
 ## Installation
 
@@ -27,7 +40,7 @@ on different versions or have different template customizations -- see
    `<config>/custom_components/powerschool_grades/`.
 2. Restart Home Assistant.
 3. Settings -> Devices & Services -> Add Integration -> "PowerSchool Grades
-   & Attendance (Unofficial)".
+   & Attendance".
 4. Enter the portal host **without** `https://` (e.g.
    `powerschool.eastnoble.net`), and your guardian username/password. The
    config flow logs in for real before saving, so a typo or bad password
@@ -59,8 +72,17 @@ endpoint is a good way to get an account flagged or locked.
   `POST /guardian/home.html` carrying `selected_student_id=<id>`; student
   IDs and names come from `switchStudent(<id>)` links in the page.
 - The grades/attendance table is found by its `<caption>` text
-  ("Attendance By Class") and parsed as a fixed 16-cell-per-row table. If a
-  district's template differs, this is the first thing to adjust.
+  ("Attendance By Class"). Column count is *not* fixed -- the number of
+  grading-period columns depends on the student's grading scheme (2 for
+  semesters, 4 for marking periods, seen so far). Layout is: 11
+  attendance-grid cells, then course+teacher, then N grading-period cells,
+  then absences, then tardies -- parsed from both ends inward rather than by
+  a hardcoded total cell count. If a district's template differs, this is
+  the first thing to adjust.
+- Missing assignments come from `/guardian/missingasmts.html`, matched by
+  its header row (`Course | Due Date | Assignment | Category | Teacher`)
+  rather than a CSS class, since PowerSchool reuses generic `table.grid`
+  classing all over the portal.
 
 ## When it breaks
 
@@ -81,8 +103,9 @@ interval modest so it doesn't look like abuse.
 
 ## Ideas for v2 (not implemented here)
 
-- A "Missing Assignments" sensor -- the portal has a separate nav page for
-  this; same scraping approach, different URL/table.
+- Day-by-day attendance codes from the Attendance History page (present vs.
+  a specific code like unexcused/tardy-excused/etc, per period, per day) --
+  currently only totals are exposed, via the Attendance sensor above.
 - Per-assignment detail via the `scores.html?frn=...&fg=S1` links already
   present on each grade cell, for a "new grade posted" binary_sensor to
   drive a notification automation.
