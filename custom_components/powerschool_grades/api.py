@@ -258,30 +258,50 @@ class PowerSchoolClient:
 
         for row in table.find_all("tr"):
             cells = row.find_all("td")
-            # Layout is fixed at the edges (11 attendance-grid cells, then
-            # course, then N grading periods, then absences+tardies) but N
-            # varies by grading scheme -- don't hardcode a total cell count.
-            if len(cells) < 14:
+            if not cells:
                 continue  # header/spacer rows aren't course rows
-            course_cell = cells[11]
-            grade_cells = cells[12:-2]
+
+            # The course cell is identified by content (an "Email <teacher>"
+            # link, or a "Details about <teacher>" title), NOT by a fixed
+            # index. The attendance-grid cells before it (nominally 11, one
+            # per school day in the last/this week columns) can be fewer
+            # than that on a row whose class doesn't meet every day -- some
+            # districts collapse non-meeting days with colspan, which shifts
+            # every following index left. Locating the course cell by what's
+            # actually in it keeps this working regardless of how many
+            # attendance cells came before it.
+            course_idx = None
+            teacher_name = None
+            for idx, cell in enumerate(cells):
+                found_teacher = None
+                for link in cell.find_all("a"):
+                    title = link.get("title", "")
+                    if title.startswith("Details about "):
+                        found_teacher = title.replace("Details about ", "").strip() or None
+                        break
+                    link_text = link.get_text(strip=True)
+                    if link_text.lower().startswith("email "):
+                        found_teacher = link_text[len("email "):].strip() or None
+                        break
+                if found_teacher is not None:
+                    course_idx = idx
+                    teacher_name = found_teacher
+                    break
+
+            if course_idx is None or len(cells) - course_idx < 3:
+                continue  # not a course row (header/spacer), or too short to hold grades+absences+tardies
+
+            course_cell = cells[course_idx]
             absences_cell = cells[-2]
             tardies_cell = cells[-1]
+            if period_labels:
+                grade_cells = cells[course_idx + 1 : course_idx + 1 + len(period_labels)]
+            else:
+                grade_cells = cells[course_idx + 1 : -2]
 
             course_name = next(course_cell.stripped_strings, "").strip()
             if not course_name:
                 continue
-
-            teacher_name = None
-            for link in course_cell.find_all("a"):
-                title = link.get("title", "")
-                if title.startswith("Details about "):
-                    teacher_name = title.replace("Details about ", "").strip() or None
-                    break
-                link_text = link.get_text(strip=True)
-                if link_text.lower().startswith("email "):
-                    teacher_name = link_text[len("email "):].strip() or None
-                    break
 
             grades: dict[str, str | None] = {}
             for idx, cell in enumerate(grade_cells):

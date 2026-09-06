@@ -74,11 +74,18 @@ endpoint is a good way to get an account flagged or locked.
 - The grades/attendance table is found by its `<caption>` text
   ("Attendance By Class"). Column count is *not* fixed -- the number of
   grading-period columns depends on the student's grading scheme (2 for
-  semesters, 4 for marking periods, seen so far). Layout is: 11
-  attendance-grid cells, then course+teacher, then N grading-period cells,
-  then absences, then tardies -- parsed from both ends inward rather than by
-  a hardcoded total cell count. If a district's template differs, this is
-  the first thing to adjust.
+  semesters, 4 for marking periods, seen so far). The row layout is some
+  number of attendance-grid cells (nominally 11, one per school day in the
+  last/this-week columns), then course+teacher, then N grading-period
+  cells, then absences, then tardies -- but the attendance-grid cell count
+  isn't fixed either: a class that doesn't meet every day can have some of
+  those day cells collapsed with `colspan`, which shifts every following
+  index left. So the course cell is located by *content* (it's the first
+  `<td>` containing an "Email teacher" link or a "Details about teacher"
+  title), not by a fixed position -- everything else (grades, absences,
+  tardies) is then read relative to that cell, and the header row's
+  Course/Absences column labels, not a raw cell-count guess. If a
+  district's template differs, this is the first thing to adjust.
 - Missing assignments come from `/guardian/missingasmts.html`, matched by
   its header row (`Course | Due Date | Assignment | Category | Teacher`)
   rather than a CSS class, since PowerSchool reuses generic `table.grid`
