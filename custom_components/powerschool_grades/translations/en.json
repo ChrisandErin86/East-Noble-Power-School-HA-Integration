@@ -1,0 +1,32 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to PowerSchool",
+        "description": "Host is just the domain, e.g. powerschool.eastnoble.net -- no https:// prefix. Use your guardian portal username/password.",
+        "data": {
+          "host": "Host",
+          "username": "Username",
+          "password": "Password"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Login failed. Check the username/password, and make sure the account doesn't require MFA or SSO.",
+      "cannot_connect": "Couldn't reach or parse the portal at that host. Double-check the domain and try again.",
+      "unknown": "Unexpected error -- check the Home Assistant log for details."
+    },
+    "abort": {
+      "already_configured": "This PowerSchool account is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "data": {
+          "scan_interval": "Poll interval (minutes)"
+        }
+      }
+    }
+  }
+}

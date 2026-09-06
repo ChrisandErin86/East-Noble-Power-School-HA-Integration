@@ -1,0 +1,12 @@
+{
+  "domain": "powerschool_grades",
+  "name": "PowerSchool Grades & Attendance (Unofficial)",
+  "codeowners": ["@christopher"],
+  "config_flow": true,
+  "documentation": "https://github.com/YOUR_GH_USERNAME/ha-powerschool-grades",
+  "integration_type": "hub",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/YOUR_GH_USERNAME/ha-powerschool-grades/issues",
+  "requirements": ["beautifulsoup4>=4.12.2"],
+  "version": "0.1.1"
+}
