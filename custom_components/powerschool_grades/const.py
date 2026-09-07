@@ -13,3 +13,14 @@ CONF_SCAN_INTERVAL = "scan_interval"
 # flow if you want it tighter.
 DEFAULT_SCAN_INTERVAL_MINUTES = 45
 MIN_SCAN_INTERVAL_MINUTES = 15
+
+# Keys into hass.data[DOMAIN][entry.entry_id] -- one config entry now holds
+# two coordinators (see coordinator.py).
+DATA_COORDINATOR = "coordinator"
+DATA_HISTORY_COORDINATOR = "history_coordinator"
+
+# Hours. Grade History only ever covers school years PowerSchool has already
+# closed out, so there's nothing to gain from polling it anywhere near as
+# often as the live, in-progress data -- it gets its own, much longer
+# interval and its own login session (see PowerSchoolHistoryCoordinator).
+GRADE_HISTORY_SCAN_INTERVAL_HOURS = 24

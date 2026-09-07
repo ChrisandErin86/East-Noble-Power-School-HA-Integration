@@ -33,6 +33,10 @@ this breaks against a different school:
    and a "- Rm: <room>" span that get_text() would mash into the name.
    If parsing comes back empty, log the raw table HTML and adjust
    _parse_student_data().
+
+Grade History (completed prior years, /guardian/termgrades.html) was
+verified live the same way, across two students and three schools on one
+account -- see _parse_grade_history_tabs() / _parse_grade_history_table().
 """
 
 from __future__ import annotations
@@ -49,9 +53,17 @@ _LOGGER = logging.getLogger(__name__)
 LOGIN_PAGE_PATH = "/public/"
 GUARDIAN_HOME_PATH = "/guardian/home.html"
 MISSING_ASSIGNMENTS_PATH = "/guardian/missingasmts.html"
+TERM_GRADES_PATH = "/guardian/termgrades.html"
 STUDENT_LINK_RE = re.compile(r"switchStudent\((\d+)\)")
 GPA_RE = re.compile(r"GPA\s*\(S\d\):\s*([\d.]+)")
 GRADES_TABLE_CAPTION = "Attendance By Class"
+# Grade History year-tab links look like "25-26 - RC", "24-25 - MS", "20-21 -
+# AV": a two-digit school-year range, a dash, then a short code for whichever
+# school the student attended that year. Confirmed live against two students
+# on the same guardian account -- RC, MS and AV all show up, so the
+# school-code half of this is intentionally left open (any letters) rather
+# than pinned to the codes seen so far.
+YEAR_TAB_RE = re.compile(r"^(\d{2}-\d{2})\s*-\s*([A-Za-z]*)$")
 # A grade cell for a period that isn't gradable yet doesn't come back empty
 # -- it renders one of a couple of placeholder texts instead, confirmed
 # against a live page: a lone "info" glyph ("[ i ]") for "not yet graded
@@ -114,6 +126,30 @@ class PowerSchoolStudentData:
     courses: list[PowerSchoolCourseRow] = field(default_factory=list)
     gpa: str | None = None
     missing_assignments: list[MissingAssignment] = field(default_factory=list)
+
+
+@dataclass
+class HistoricalCourseGrade:
+    course_name: str
+    grade: str | None
+    percent: str | None
+    citizenship: str | None
+    hours: str | None
+
+
+@dataclass
+class HistoricalTerm:
+    term_label: str
+    courses: list[HistoricalCourseGrade] = field(default_factory=list)
+
+
+@dataclass
+class HistoricalYear:
+    year_label: str  # e.g. "25-26"
+    school_label: str  # e.g. "RC", "MS", "AV", "HS" -- can be blank
+    termid: str
+    schoolid: str
+    terms: list[HistoricalTerm] = field(default_factory=list)
 
 
 class PowerSchoolClient:
@@ -267,6 +303,40 @@ class PowerSchoolClient:
 
         return data
 
+    async def async_fetch_grade_history(self, student: PowerSchoolStudent) -> list[HistoricalYear]:
+        """Completed school years only -- the year in progress lives on home.html, not here.
+
+        Grade History only lists a year once PowerSchool has closed it out
+        (confirmed live: partway through a school year, that year's own tab
+        isn't there yet). Each year tab is its own (termid, schoolid) pair --
+        a student who changed schools has a different schoolid for the years
+        at the old one, which is why both are tracked per year instead of
+        assuming one schoolid for the whole account.
+        """
+        if student.student_id:
+            await self.async_switch_student(student.student_id)
+        else:
+            await self._ensure_login()
+
+        html = await self._get_authenticated(TERM_GRADES_PATH)
+        tabs = self._parse_grade_history_tabs(html)
+
+        years: list[HistoricalYear] = []
+        for year_label, school_label, termid, schoolid in tabs:
+            year_html = await self._get_authenticated(f"{TERM_GRADES_PATH}?termid={termid}&schoolid={schoolid}")
+            years.append(
+                HistoricalYear(
+                    year_label=year_label,
+                    school_label=school_label,
+                    termid=termid,
+                    schoolid=schoolid,
+                    terms=self._parse_grade_history_table(year_html),
+                )
+            )
+
+        years.sort(key=lambda y: int(y.year_label[:2]))
+        return years
+
     @staticmethod
     def _parse_student_data(student: PowerSchoolStudent, html: str) -> PowerSchoolStudentData:
         soup = BeautifulSoup(html, "html.parser")
@@ -411,3 +481,79 @@ class PowerSchoolClient:
                 )
             )
         return assignments
+
+    @staticmethod
+    def _parse_grade_history_tabs(html: str) -> list[tuple[str, str, str, str]]:
+        """Every (year_label, school_label, termid, schoolid) tab on the Grade History page.
+
+        Works from the bare /guardian/termgrades.html URL just as well as a
+        specific year's URL -- confirmed live, the full tab bar is there
+        either way, even when the bare URL's own default content is empty.
+        """
+        soup = BeautifulSoup(html, "html.parser")
+        seen: set[tuple[str, str]] = set()
+        tabs: list[tuple[str, str, str, str]] = []
+        for anchor in soup.find_all("a", href=True):
+            match = YEAR_TAB_RE.match(anchor.get_text(strip=True))
+            if not match:
+                continue
+            href = anchor["href"]
+            termid_match = re.search(r"termid=(\d+)", href)
+            schoolid_match = re.search(r"schoolid=(\d+)", href)
+            if not termid_match or not schoolid_match:
+                continue
+            key = (termid_match.group(1), schoolid_match.group(1))
+            if key in seen:
+                continue
+            seen.add(key)
+            tabs.append((match.group(1), match.group(2), termid_match.group(1), schoolid_match.group(1)))
+        return tabs
+
+    @staticmethod
+    def _parse_grade_history_table(html: str) -> list[HistoricalTerm]:
+        """One year's table: term-section header rows alternating with that term's course rows.
+
+        Confirmed live across three different term-labeling schemes (S1/S2,
+        H1 + M1-M4, T1-T3) and two grading scales (high school percent/letter,
+        elementary letter-only with no citizenship grade) -- the row shapes
+        are the same regardless: a single `<th>` (the term label, e.g. "T1")
+        with no `<td>` starts a new term section; a `<th>` row of exactly
+        ["Course", "Grade", "%", "Cit", "Hrs"] is a repeated column header and
+        is skipped; anything else is a 5-`<td>` course row belonging to
+        whichever term section it's under.
+        """
+        soup = BeautifulSoup(html, "html.parser")
+        table = soup.find("table", class_="grid")
+        if table is None:
+            return []
+
+        terms: list[HistoricalTerm] = []
+        current: HistoricalTerm | None = None
+        for row in table.find_all("tr"):
+            headers = row.find_all("th")
+            cells = row.find_all("td")
+
+            if headers and not cells:
+                header_texts = [h.get_text(strip=True) for h in headers]
+                if header_texts == ["Course", "Grade", "%", "Cit", "Hrs"]:
+                    continue
+                current = HistoricalTerm(term_label=header_texts[0] if header_texts else "")
+                terms.append(current)
+                continue
+
+            if len(cells) != 5 or current is None:
+                continue  # not a course row, or one that showed up before any term header
+
+            course, grade, percent, citizenship, hours = (c.get_text(strip=True) for c in cells)
+            if not course:
+                continue
+            current.courses.append(
+                HistoricalCourseGrade(
+                    course_name=course,
+                    grade=grade or None,
+                    percent=percent or None,
+                    citizenship=citizenship or None,
+                    hours=hours or None,
+                )
+            )
+        return terms

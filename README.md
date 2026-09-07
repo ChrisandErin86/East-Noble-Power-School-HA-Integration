@@ -40,6 +40,12 @@ different versions or have different template customizations -- see
   poll, so there's nothing sensible for "check off" or "delete" to do --
   neither is offered, and the list just reflects whatever the portal says
   is currently missing.
+- A Grade History sensor per student, covering every *completed* school
+  year PowerSchool has archived -- not the current year, which is what the
+  course sensors above are for. State is the count of years on file;
+  attributes carry the full year -> term -> course breakdown plus a
+  flattened, chronologically-ordered list meant for charting. See "Grade
+  History" below for the data shape and an example chart config.
 
 ## Installation
 
@@ -117,6 +123,56 @@ endpoint is a good way to get an account flagged or locked.
   "no classes found," which shows up in HA as every sensor going stuck on
   `unknown` -- confusing, since it's not an `UpdateFailed`/unavailable
   state, just stale data forever until the integration reloads.
+
+## Grade History
+
+Completed school years live on a separate page from the current year's
+grades (`/guardian/termgrades.html`, vs. `/guardian/home.html` for the
+in-progress term), and PowerSchool only lists a year there once it's
+closed out -- there's no way to get the current year's data from this
+page. Each year is its own tab on that page, e.g. `25-26 - RC` or
+`20-21 - AV`: a school-year range, a dash, then a short code for whichever
+school the student attended that year, which can change year to year (a
+student who moved from an elementary school to a middle school has a
+different code, and a different `schoolid`, for the years at each). Tabs
+are found by matching that text pattern rather than assuming specific
+codes -- `RC`, `MS`, `AV`, and `HS` have all shown up on one account. Each
+tab's `termid`/`schoolid` pair is pulled from its link and fetched
+separately.
+
+A year's table has no fixed number of terms or column count -- a
+`<th colspan="5">` row starting a new term section (labeled `S1`/`S2`,
+`H1`, `M1`-`M4`, `T1`-`T3`, depending on the district's and school's own
+grading scheme) alternates with that term's course rows (Course, Grade, %,
+Citizenship, Hours). Citizenship is often blank at the elementary level.
+
+This is a lot more data than the rest of the integration pulls per poll,
+and none of it changes once a year is archived, so it's on its own
+24-hour refresh cycle with its own login session, independent of the
+regular scan interval setting. A brand-new install's Grade History
+sensors will read 0 / empty attributes until that first background
+refresh completes.
+
+`course_percent_history` (a Grade History sensor's attribute) is a flat
+list of `{year, term, course, grade, percent, date}` rows, oldest first.
+`date` is an estimate, not a real grading-period end date -- PowerSchool
+doesn't expose one here, so each term is placed at an even spacing across
+an assumed Aug 15 - Jun 15 school year, which is enough to get the terms
+in the right order and season for a trend line. An
+[apexcharts-card](https://github.com/RomRider/apexcharts-card) (HACS)
+series for one course looks like:
+
+```yaml
+type: custom:apexcharts-card
+graph_span: 6y
+series:
+  - entity: sensor.bennett_bennett_grade_history
+    name: Algebra I
+    data_generator: |
+      return entity.attributes.course_percent_history
+        .filter(row => row.course === "Algebra I-1")
+        .map(row => [new Date(row.date).getTime(), row.percent]);
+```
 
 ## When it breaks
 

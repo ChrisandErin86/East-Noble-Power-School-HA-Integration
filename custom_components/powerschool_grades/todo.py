@@ -26,7 +26,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .api import MissingAssignment
-from .const import DOMAIN
+from .const import DATA_COORDINATOR, DOMAIN
 from .coordinator import PowerSchoolCoordinator
 from .entity import PowerSchoolStudentEntity
 
@@ -68,7 +68,7 @@ def _item_uid(student_id: str, assignment: MissingAssignment) -> str:
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
-    coordinator: PowerSchoolCoordinator = hass.data[DOMAIN][entry.entry_id]
+    coordinator: PowerSchoolCoordinator = hass.data[DOMAIN][entry.entry_id][DATA_COORDINATOR]
 
     entities = [
         PowerSchoolMissingAssignmentsTodoList(coordinator, student_id) for student_id in coordinator.data
