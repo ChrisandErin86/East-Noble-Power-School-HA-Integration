@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import re
 from datetime import date, timedelta
 from typing import Any
@@ -12,7 +13,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .api import PowerSchoolCourseRow
-from .const import DATA_COORDINATOR, DATA_HISTORY_COORDINATOR, DOMAIN
+from .const import CONF_COURSE_TREND_SENSORS, DATA_COORDINATOR, DATA_HISTORY_COORDINATOR, DOMAIN
 from .coordinator import PowerSchoolCoordinator, PowerSchoolHistoryCoordinator
 from .entity import PowerSchoolStudentEntity as _PowerSchoolStudentEntity
 
@@ -52,12 +53,31 @@ def _approx_term_date(year_label: str, term_index: int, term_count: int) -> str 
     return (start + timedelta(days=offset_days)).isoformat()
 
 
+def _parse_course_names(raw: str | None) -> list[str]:
+    """Split the options flow's comma-separated course-name string.
+
+    Order-preserving, de-duplicated, blanks dropped -- so re-saving the
+    options form with the same text doesn't reorder or duplicate entities.
+    """
+    if not raw:
+        return []
+    seen: set[str] = set()
+    names: list[str] = []
+    for part in raw.split(","):
+        name = part.strip()
+        if name and name not in seen:
+            seen.add(name)
+            names.append(name)
+    return names
+
+
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
     entry_data = hass.data[DOMAIN][entry.entry_id]
     coordinator: PowerSchoolCoordinator = entry_data[DATA_COORDINATOR]
     history_coordinator: PowerSchoolHistoryCoordinator = entry_data[DATA_HISTORY_COORDINATOR]
+    trend_course_names = _parse_course_names(entry.options.get(CONF_COURSE_TREND_SENSORS))
 
     entities: list[SensorEntity] = []
     for student_id, student_data in coordinator.data.items():
@@ -67,6 +87,10 @@ async def async_setup_entry(
         entities.append(PowerSchoolGradeHistorySensor(coordinator, history_coordinator, student_id))
         for course_index in range(len(student_data.courses)):
             entities.append(PowerSchoolCourseGradeSensor(coordinator, student_id, course_index))
+        for course_name in trend_course_names:
+            entities.append(
+                PowerSchoolCourseTrendSensor(coordinator, history_coordinator, student_id, course_name)
+            )
 
     async_add_entities(entities)
 
@@ -327,3 +351,100 @@ class PowerSchoolGradeHistorySensor(_PowerSchoolStudentEntity, SensorEntity):
             "years": years_payload,
             "course_percent_history": course_percent_history,
         }
+
+
+class PowerSchoolCourseTrendSensor(_PowerSchoolStudentEntity, SensorEntity):
+    """One student's completed-year history for exactly one named course.
+
+    This exists for chart cards that, unlike apexcharts-card's
+    data_generator, can't filter an attribute array themselves --
+    statistics-graph-chart-card's Data Attribute source is arithmetic-only
+    (no property access, filtering, or JS; confirmed against its own
+    Advanced-tab tooltips). Rather than expecting every such card to cope
+    with PowerSchoolGradeHistorySensor's multi-course
+    course_percent_history list, this sensor does the filtering once, in
+    Python, so a card's Data Attribute can just point at `history` with
+    zero ambiguity.
+
+    Opt-in only, via the "Course trend sensors" option (a comma-separated
+    list of exact course names) -- NOT created automatically for every
+    course a district happens to use, which would be entity clutter for
+    anyone who doesn't want it. Course-name matching is exact against
+    whatever PowerSchool itself renders (e.g. "Algebra I-1", not
+    "Algebra I") -- check a PowerSchoolGradeHistorySensor's
+    course_percent_history attribute for the exact spelling if a
+    configured name isn't matching anything.
+
+    A student who never took the configured course ends up with an empty
+    `history` -- harmless (mirrors how PowerSchoolGradeHistorySensor
+    itself degrades when there's nothing on file yet), just not
+    something worth hiding the entity over, since course names aren't
+    validated against any particular student at config time.
+    """
+
+    _attr_icon = "mdi:chart-timeline-variant"
+
+    def __init__(
+        self,
+        coordinator: PowerSchoolCoordinator,
+        history_coordinator: PowerSchoolHistoryCoordinator,
+        student_id: str,
+        course_name: str,
+    ) -> None:
+        super().__init__(coordinator, student_id)
+        self._history_coordinator = history_coordinator
+        self._course_name = course_name
+        # sha1, not the raw name: course names carry spaces/slashes/dashes
+        # PowerSchool itself put there (e.g. "Algebra I-1"), which aren't
+        # safe to fold into a unique_id/entity_id unmodified.
+        digest = hashlib.sha1(course_name.encode("utf-8")).hexdigest()[:10]
+        self._attr_unique_id = f"{DOMAIN}_{student_id}_course_trend_{digest}"
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        # Same reasoning as PowerSchoolGradeHistorySensor: this entity's
+        # data comes from the history coordinator's own, separate refresh
+        # schedule, so it needs its own listener alongside whatever
+        # CoordinatorEntity already wired up for the main coordinator.
+        self.async_on_remove(
+            self._history_coordinator.async_add_listener(self._handle_coordinator_update)
+        )
+
+    @property
+    def _history(self) -> list[dict[str, Any]]:
+        data = self._history_coordinator.data
+        years = data.get(self._student_id, []) if data else []
+        rows: list[dict[str, Any]] = []
+        for year in years:
+            term_count = len(year.terms)
+            for term_index, term in enumerate(year.terms):
+                approx_date = _approx_term_date(year.year_label, term_index, term_count)
+                for c in term.courses:
+                    if c.course_name != self._course_name:
+                        continue
+                    rows.append(
+                        {
+                            "year": year.year_label,
+                            "term": term.term_label,
+                            "grade": c.grade,
+                            "percent": _to_int_or_none(c.percent),
+                            "date": approx_date,
+                        }
+                    )
+        return rows
+
+    @property
+    def name(self) -> str:
+        data = self._student_data
+        if not data:
+            return f"PowerSchool {self._course_name} Trend"
+        return f"{data.student.name} - {self._course_name} Trend"
+
+    @property
+    def native_value(self) -> int | None:
+        history = self._history
+        return history[-1]["percent"] if history else None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        return {"course": self._course_name, "history": self._history}

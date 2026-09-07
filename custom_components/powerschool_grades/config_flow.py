@@ -13,6 +13,7 @@ from homeassistant.helpers import aiohttp_client
 
 from .api import PowerSchoolAuthError, PowerSchoolClient, PowerSchoolError
 from .const import (
+    CONF_COURSE_TREND_SENSORS,
     CONF_HOST,
     CONF_PASSWORD,
     CONF_SCAN_INTERVAL,
@@ -103,6 +104,10 @@ class PowerSchoolOptionsFlow(config_entries.OptionsFlow):
                         CONF_SCAN_INTERVAL,
                         default=self.config_entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL_MINUTES),
                     ): vol.All(vol.Coerce(int), vol.Range(min=MIN_SCAN_INTERVAL_MINUTES)),
+                    vol.Optional(
+                        CONF_COURSE_TREND_SENSORS,
+                        default=self.config_entry.options.get(CONF_COURSE_TREND_SENSORS, ""),
+                    ): str,
                 }
             ),
         )

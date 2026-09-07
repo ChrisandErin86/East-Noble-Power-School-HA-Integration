@@ -24,7 +24,11 @@
     "step": {
       "init": {
         "data": {
-          "scan_interval": "Poll interval (minutes)"
+          "scan_interval": "Poll interval (minutes)",
+          "course_trend_sensors": "Course trend sensors (comma-separated)"
+        },
+        "data_description": {
+          "course_trend_sensors": "Optional. Exact course names (comma-separated) to build a dedicated, already-filtered trend sensor for -- one per student who has that course, e.g. 'Algebra I-1, Biology I-1'. Check a Grade History sensor's course_percent_history attribute for the exact spelling PowerSchool uses. Leave blank for none."
         }
       }
     }

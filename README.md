@@ -46,6 +46,12 @@ different versions or have different template customizations -- see
   attributes carry the full year -> term -> course breakdown plus a
   flattened, chronologically-ordered list meant for charting. See "Grade
   History" below for the data shape and an example chart config.
+- Optional, opt-in Course Trend sensors -- one per (student, course name)
+  you list in the integration's options, each already filtered to just
+  that course's history. These exist for chart cards that can't filter an
+  attribute array themselves (see "Course Trend sensors" below); most
+  people charting one course can skip this and use apexcharts-card's
+  data_generator against the Grade History sensor directly instead.
 
 ## Installation
 
@@ -173,6 +179,39 @@ series:
         .filter(row => row.course === "Algebra I-1")
         .map(row => [new Date(row.date).getTime(), row.percent]);
 ```
+
+### Course Trend sensors (for chart cards that can't filter an attribute)
+
+apexcharts-card's `data_generator` above runs real JavaScript against
+`course_percent_history`, so it can filter to one course itself. Not every
+chart card can do that -- [statistics-graph-chart-card](https://github.com/cataseven/Statistics-Graph-Chart-Card),
+for one, has an "Attribute Data Source" mode built for exactly this shape
+of data (an array of `{time, value}`-ish objects on an attribute), but its
+Value Expression field is arithmetic-only: it can transform a row's own
+fields, but it cannot filter the array down to a subset (no property
+comparison, no JS) -- confirmed against its own Advanced-tab tooltips,
+which say as much. Pointed straight at `course_percent_history`, it has no
+way to show just one course; it would plot every course's grades as one
+mixed line.
+
+For cards like that, turn on a per-course sensor instead of asking the
+card to filter: Settings -> Devices & Services -> PowerSchool Grades &
+Attendance -> Configure, and fill in **Course trend sensors** with a
+comma-separated list of exact course names (same spelling
+`course_percent_history` uses, e.g. `Algebra I-1, Biology I-1` -- check an
+existing Grade History sensor's attributes if you're not sure of the
+exact string). Saving reloads the integration and adds one sensor per
+(student, course name) -- e.g. `sensor.bennett_bennett_algebra_i_1_trend`
+-- with the filtering already done: state is the most recent percent on
+file, and a `history` attribute holds just that course's rows across every
+completed year, in the same `{year, term, grade, percent, date}` shape as
+`course_percent_history`'s rows.
+
+This is deliberately opt-in and per-course rather than automatic for every
+course on the account -- an entity per course per student, unprompted,
+would be clutter for anyone not charting per-course trends at all. Point
+statistics-graph-chart-card's Data Attribute at `history`, Time Field at
+`date`, Value Field at `percent`.
 
 ## When it breaks
 
