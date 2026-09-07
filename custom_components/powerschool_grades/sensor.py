@@ -7,13 +7,12 @@ from typing import Any
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .api import PowerSchoolCourseRow, PowerSchoolStudentData
+from .api import PowerSchoolCourseRow
 from .const import DOMAIN
 from .coordinator import PowerSchoolCoordinator
+from .entity import PowerSchoolStudentEntity as _PowerSchoolStudentEntity
 
 
 def _to_int(value: str | None) -> int:
@@ -37,32 +36,6 @@ async def async_setup_entry(
             entities.append(PowerSchoolCourseGradeSensor(coordinator, student_id, course_index))
 
     async_add_entities(entities)
-
-
-class _PowerSchoolStudentEntity(CoordinatorEntity[PowerSchoolCoordinator]):
-    """Shared lookup of this entity's current student record.
-
-    Every property re-reads from coordinator.data on each access rather than
-    caching, since the coordinator swaps the whole dict on every refresh.
-    """
-
-    def __init__(self, coordinator: PowerSchoolCoordinator, student_id: str) -> None:
-        super().__init__(coordinator)
-        self._student_id = student_id
-
-    @property
-    def _student_data(self) -> PowerSchoolStudentData | None:
-        return self.coordinator.data.get(self._student_id)
-
-    @property
-    def device_info(self) -> DeviceInfo:
-        data = self._student_data
-        name = data.student.name if data else self._student_id
-        return DeviceInfo(
-            identifiers={(DOMAIN, self._student_id)},
-            name=f"PowerSchool - {name}",
-            manufacturer="PowerSchool",
-        )
 
 
 class PowerSchoolGpaSensor(_PowerSchoolStudentEntity, SensorEntity):

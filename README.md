@@ -32,6 +32,14 @@ different versions or have different template customizations -- see
 - A Missing Assignments sensor per student: state is the count of currently
   missing assignments, with the full list (course, due date, assignment
   name, category, teacher) as an attribute.
+- A Missing Assignments **to-do list** per student (needs Home Assistant
+  2024.2+), mirroring the same data as an actual to-do list entity instead
+  of a sensor attribute -- drop a native "To-do List" card on it and get a
+  readable, sortable-by-due-date list with no templating required. It's
+  read-only on purpose: this list is recomputed from PowerSchool on every
+  poll, so there's nothing sensible for "check off" or "delete" to do --
+  neither is offered, and the list just reflects whatever the portal says
+  is currently missing.
 
 ## Installation
 

@@ -1,4 +1,4 @@
-"""The PowerSchool Grades & Attendance (Unofficial) integration.
+"""The PowerSchool Grades & Attendance integration.
 
 Screen-scrapes a district's PowerSchool guardian portal -- there is no
 public API for parent accounts. See custom_components/powerschool_grades/api.py
@@ -13,7 +13,7 @@ from homeassistant.core import HomeAssistant
 from .const import DOMAIN
 from .coordinator import PowerSchoolCoordinator
 
-PLATFORMS = ["sensor"]
+PLATFORMS = ["sensor", "todo"]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
