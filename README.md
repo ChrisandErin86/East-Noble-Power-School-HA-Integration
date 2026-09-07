@@ -82,18 +82,26 @@ endpoint is a good way to get an account flagged or locked.
 - The grades/attendance table is found by its `<caption>` text
   ("Attendance By Class"). Column count is *not* fixed -- the number of
   grading-period columns depends on the student's grading scheme (2 for
-  semesters, 4 for marking periods, seen so far). The row layout is some
-  number of attendance-grid cells (nominally 11, one per school day in the
-  last/this-week columns), then course+teacher, then N grading-period
-  cells, then absences, then tardies -- but the attendance-grid cell count
-  isn't fixed either: a class that doesn't meet every day can have some of
-  those day cells collapsed with `colspan`, which shifts every following
-  index left. So the course cell is located by *content* (it's the first
-  `<td>` containing an "Email teacher" link or a "Details about teacher"
-  title), not by a fixed position -- everything else (grades, absences,
-  tardies) is then read relative to that cell, and the header row's
-  Course/Absences column labels, not a raw cell-count guess. If a
-  district's template differs, this is the first thing to adjust.
+  semesters, 4 for marking periods, seen so far), read from the header
+  row's Course/Absences column labels rather than assumed. The row layout
+  is 11 attendance-grid cells (one per school day in the last/this-week
+  columns), then course+teacher, then N grading-period cells, then
+  absences, then tardies. The course cell is located by *content* (the
+  first `<td>` containing an "Email teacher" link or a "Details about
+  teacher" title) rather than a fixed index, as a safeguard against the
+  attendance-grid cell count varying by class schedule; everything else
+  (grades, absences, tardies) is then read relative to wherever the
+  course cell actually is.
+- A grade cell for a period with nothing gradable yet isn't just empty --
+  it renders a placeholder, and there's more than one kind: a lone "info"
+  glyph (`[ i ]`) for "not graded this period yet", or the literal text
+  "Not available" for a period that hasn't started at all (e.g. semester 2
+  before semester 2 begins). Both are treated as "no grade" (see
+  `NOT_YET_GRADED_RE` in api.py) rather than as real grade text -- a course
+  sensor's state should always be an actual grade or nothing, never a
+  portal placeholder string. If a course sensor's state ever shows some
+  other odd placeholder instead of a grade, this regex is the first thing
+  to extend.
 - Missing assignments come from `/guardian/missingasmts.html`, matched by
   its header row (`Course | Due Date | Assignment | Category | Teacher`)
   rather than a CSS class, since PowerSchool reuses generic `table.grid`

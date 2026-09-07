@@ -52,9 +52,17 @@ MISSING_ASSIGNMENTS_PATH = "/guardian/missingasmts.html"
 STUDENT_LINK_RE = re.compile(r"switchStudent\((\d+)\)")
 GPA_RE = re.compile(r"GPA\s*\(S\d\):\s*([\d.]+)")
 GRADES_TABLE_CAPTION = "Attendance By Class"
-# Grade cells that just link to a not-yet-graded period render as a lone
-# "info" glyph (literal text like "[ i ]" or "i"), not an empty cell.
-NOT_YET_GRADED_RE = re.compile(r"^\[?\s*i\s*\]?$", re.IGNORECASE)
+# A grade cell for a period that isn't gradable yet doesn't come back empty
+# -- it renders one of a couple of placeholder texts instead, confirmed
+# against a live page: a lone "info" glyph ("[ i ]") for "not yet graded
+# this period", and the literal text "Not available" for a period that
+# hasn't started at all (e.g. semester 2 grades before semester 2 begins).
+# Both need to be treated as "no grade" (None), not as real grade text --
+# missing this originally meant a course whose only non-empty period cell
+# said "Not available" got that literal string returned as its
+# current_grade, which then displayed as the course sensor's state and
+# was easy to mistake for Home Assistant's own "unavailable" badge.
+NOT_YET_GRADED_RE = re.compile(r"^(\[?\s*i\s*\]?|not available)$", re.IGNORECASE)
 
 
 class PowerSchoolAuthError(Exception):
