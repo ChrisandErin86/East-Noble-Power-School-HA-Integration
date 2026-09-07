@@ -172,13 +172,20 @@ series for one course looks like:
 type: custom:apexcharts-card
 graph_span: 6y
 series:
-  - entity: sensor.bennett_bennett_grade_history
+  - entity: sensor.sam_rivera_grade_history
     name: Algebra I
     data_generator: |
       return entity.attributes.course_percent_history
         .filter(row => row.course === "Algebra I-1")
         .map(row => [new Date(row.date).getTime(), row.percent]);
 ```
+
+![Example apexcharts-card course trend, synthetic data](docs/img/apexcharts-course-trend-example.png)
+
+(`sam_rivera` above is a placeholder -- swap in whichever Grade History
+entity `Settings -> Devices & Services -> Entities` shows for your own
+student, and the numbers in the chart are made up for illustration, not
+anyone's real grades.)
 
 ### Course Trend sensors (for chart cards that can't filter an attribute)
 
@@ -201,7 +208,7 @@ comma-separated list of exact course names (same spelling
 `course_percent_history` uses, e.g. `Algebra I-1, Biology I-1` -- check an
 existing Grade History sensor's attributes if you're not sure of the
 exact string). Saving reloads the integration and adds one sensor per
-(student, course name) -- e.g. `sensor.bennett_bennett_algebra_i_1_trend`
+(student, course name) -- e.g. `sensor.sam_rivera_biology_i_1_trend`
 -- with the filtering already done: state is the most recent percent on
 file, and a `history` attribute holds just that course's rows across every
 completed year, in the same `{year, term, grade, percent, date}` shape as
@@ -210,8 +217,26 @@ completed year, in the same `{year, term, grade, percent, date}` shape as
 This is deliberately opt-in and per-course rather than automatic for every
 course on the account -- an entity per course per student, unprompted,
 would be clutter for anyone not charting per-course trends at all. Point
-statistics-graph-chart-card's Data Attribute at `history`, Time Field at
-`date`, Value Field at `percent`.
+statistics-graph-chart-card's `data_attribute` at `history`,
+`data_time_field` at `date`, `data_value_field` at `percent`:
+
+```yaml
+type: custom:statistics-graph-chart-card
+entities:
+  - entity: sensor.sam_rivera_biology_i_1_trend
+    name: Biology I-1
+    color: "#7c8cff"
+    data_attribute: history
+    data_time_field: date
+    data_value_field: percent
+    data_time_unit: iso
+```
+
+![Example statistics-graph-chart-card course trend, synthetic data](docs/img/statistics-graph-course-trend-example.png)
+
+(Again, `sam_rivera` and the numbers plotted are a made-up placeholder,
+not a real student's data -- point `entity:` at your own Course Trend
+sensor's entity ID.)
 
 ## When it breaks
 
