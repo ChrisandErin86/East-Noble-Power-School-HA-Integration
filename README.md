@@ -90,6 +90,17 @@ endpoint is a good way to get an account flagged or locked.
   its header row (`Course | Due Date | Assignment | Category | Teacher`)
   rather than a CSS class, since PowerSchool reuses generic `table.grid`
   classing all over the portal.
+- The client logs in once and reuses the session across polls (an aiohttp
+  cookie jar), rather than re-logging in every 15-45+ minute refresh. If
+  the portal's own session cookie expires faster than that -- observed in
+  practice: after a while, every authenticated page silently comes back as
+  the sign-in page again, no error, no redirect -- every fetch checks for
+  that (`_looks_signed_out()` in `api.py`) and transparently re-logs in and
+  retries once before giving up. Without this, a dead session doesn't fail
+  loudly: it just looks like "no students found," which then looks like
+  "no classes found," which shows up in HA as every sensor going stuck on
+  `unknown` -- confusing, since it's not an `UpdateFailed`/unavailable
+  state, just stale data forever until the integration reloads.
 
 ## When it breaks
 

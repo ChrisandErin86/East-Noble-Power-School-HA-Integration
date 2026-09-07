@@ -8,5 +8,5 @@
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/ChrisandErin86/East-Noble-Power-School-HA-Integration/issues",
   "requirements": ["beautifulsoup4>=4.12.2"],
-  "version": "0.2.1"
+  "version": "0.2.2"
 }

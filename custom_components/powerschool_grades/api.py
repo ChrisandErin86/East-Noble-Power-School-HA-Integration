@@ -170,12 +170,43 @@ class PowerSchoolClient:
         if not self._logged_in:
             await self.async_login()
 
-    async def async_get_students(self) -> list[PowerSchoolStudent]:
-        """List every student linked to this guardian account."""
+    @staticmethod
+    def _looks_signed_out(html: str) -> bool:
+        """True if a page we expected to be authenticated is actually the sign-in page.
+
+        The portal doesn't 401/redirect obviously when a session cookie has
+        expired -- it just serves the login page again with a 200. This
+        integration polls every 15-45+ minutes (see const.py), which can
+        outlast the portal's own session timeout, so every authenticated GET
+        needs to check for this rather than trusting the sticky
+        `_logged_in` flag forever.
+        """
+        return 'id="LoginForm"' in html or 'id="pslogin"' in html
+
+    async def _get_authenticated(self, path: str) -> str:
+        """GET a page that requires an active session, transparently re-logging in once if the session has quietly expired."""
         await self._ensure_login()
-        async with self._session.get(f"{self._base_url}{GUARDIAN_HOME_PATH}") as resp:
+        async with self._session.get(f"{self._base_url}{path}") as resp:
             resp.raise_for_status()
             html = await resp.text()
+
+        if self._looks_signed_out(html):
+            _LOGGER.debug("Session appears to have expired fetching %s -- re-authenticating.", path)
+            self._logged_in = False
+            await self.async_login()
+            async with self._session.get(f"{self._base_url}{path}") as resp:
+                resp.raise_for_status()
+                html = await resp.text()
+            if self._looks_signed_out(html):
+                raise PowerSchoolAuthError(
+                    f"Still on the sign-in page after re-authenticating while fetching {path} -- "
+                    "credentials may have changed, or the account got locked."
+                )
+        return html
+
+    async def async_get_students(self) -> list[PowerSchoolStudent]:
+        """List every student linked to this guardian account."""
+        html = await self._get_authenticated(GUARDIAN_HOME_PATH)
         return self._parse_students(html)
 
     @staticmethod
@@ -199,6 +230,18 @@ class PowerSchoolClient:
             f"{self._base_url}{GUARDIAN_HOME_PATH}", data={"selected_student_id": student_id}
         ) as resp:
             resp.raise_for_status()
+            html = await resp.text()
+
+        if self._looks_signed_out(html):
+            # Session died between _ensure_login()'s check and this POST --
+            # re-login and retry the switch once before giving up on it.
+            _LOGGER.debug("Session appears to have expired switching to student %s -- re-authenticating.", student_id)
+            self._logged_in = False
+            await self.async_login()
+            async with self._session.post(
+                f"{self._base_url}{GUARDIAN_HOME_PATH}", data={"selected_student_id": student_id}
+            ) as resp:
+                resp.raise_for_status()
 
     async def async_get_student_data(self, student: PowerSchoolStudent) -> PowerSchoolStudentData:
         """Switch to this student's context and scrape their grades + missing-assignments pages."""
@@ -207,15 +250,11 @@ class PowerSchoolClient:
         else:
             await self._ensure_login()
 
-        async with self._session.get(f"{self._base_url}{GUARDIAN_HOME_PATH}") as resp:
-            resp.raise_for_status()
-            grades_html = await resp.text()
+        grades_html = await self._get_authenticated(GUARDIAN_HOME_PATH)
         data = self._parse_student_data(student, grades_html)
 
         # Same active-student session context, no need to switch again.
-        async with self._session.get(f"{self._base_url}{MISSING_ASSIGNMENTS_PATH}") as resp:
-            resp.raise_for_status()
-            missing_html = await resp.text()
+        missing_html = await self._get_authenticated(MISSING_ASSIGNMENTS_PATH)
         data.missing_assignments = self._parse_missing_assignments(missing_html)
 
         return data
